@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: kubernetes-oidc-delegator-production
+
+resources:
+- ../../base
+
+namespace: production
+
+patchesStrategicMerge:
+- deployment-patch.yaml
+- configmap-patch.yaml
+
+commonLabels:
+  environment: production
+
+images:
+- name: ghcr.io/bear-san/kubernetes-oidc-delegator
+  newTag: v1.0.0
+
+replicas:
+- name: kubernetes-oidc-delegator
+  count: 3

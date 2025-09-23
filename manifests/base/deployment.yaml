@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-oidc-delegator
+  labels:
+    app: kubernetes-oidc-delegator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubernetes-oidc-delegator
+  template:
+    metadata:
+      labels:
+        app: kubernetes-oidc-delegator
+    spec:
+      serviceAccountName: kubernetes-oidc-delegator
+      containers:
+      - name: kubernetes-oidc-delegator
+        image: ghcr.io/bear-san/kubernetes-oidc-delegator:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        args:
+        - --port=8080
+        - --server-host=$(SERVER_HOST)
+        - --namespace-prefix=$(NAMESPACE_PREFIX)
+        - --namespace-suffix=$(NAMESPACE_SUFFIX)
+        env:
+        - name: SERVER_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: kubernetes-oidc-delegator-config
+              key: server-host
+        - name: NAMESPACE_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: kubernetes-oidc-delegator-config
+              key: namespace-prefix
+              optional: true
+        - name: NAMESPACE_SUFFIX
+          valueFrom:
+            configMapKeyRef:
+              name: kubernetes-oidc-delegator-config
+              key: namespace-suffix
+              optional: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 65534
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
