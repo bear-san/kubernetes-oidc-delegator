@@ -19,5 +19,5 @@ namePrefix: ""
 namespace: default
 
 images:
-- name: ghcr.io/bear-san/kubernetes-oidc-delegator
+- name: bearsan/kubernetes-oidc-delegator
   newTag: latest

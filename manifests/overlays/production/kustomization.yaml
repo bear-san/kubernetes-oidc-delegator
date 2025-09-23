@@ -17,7 +17,7 @@ commonLabels:
   environment: production
 
 images:
-- name: ghcr.io/bear-san/kubernetes-oidc-delegator
+- name: bearsan/kubernetes-oidc-delegator
   newTag: v1.0.0
 
 replicas:

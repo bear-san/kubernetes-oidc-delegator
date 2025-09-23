@@ -28,8 +28,8 @@ dockers:
     ids:
       - kubernetes-oidc-delegator
     image_templates:
-      - "ghcr.io/bear-san/kubernetes-oidc-delegator:{{ .Tag }}"
-      - "ghcr.io/bear-san/kubernetes-oidc-delegator:latest"
+      - "bearsan/kubernetes-oidc-delegator:{{ .Tag }}"
+      - "bearsan/kubernetes-oidc-delegator:latest"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
