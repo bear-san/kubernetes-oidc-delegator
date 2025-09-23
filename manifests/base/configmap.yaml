@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-oidc-delegator-config
+  labels:
+    app: kubernetes-oidc-delegator
+data:
+  server-host: "https://your-server-host.example.com"
+  namespace-prefix: ""
+  namespace-suffix: ""

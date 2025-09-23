@@ -1,0 +1,128 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - ineffassign
+    - gosec
+    - misspell
+    - unparam
+    - unused
+    - prealloc
+    - gocritic
+    - gochecknoinits
+    - gocyclo
+    - dupl
+    - gocognit
+    - funlen
+    - godox
+    - lll
+    - wsl_v5
+    - revive
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - exhaustive
+    - copyloopvar
+    - forbidigo
+    - forcetypeassert
+    - goconst
+    - gomodguard
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - tparallel
+    - unconvert
+    - whitespace
+
+  settings:
+    govet:
+      enable:
+        - shadow
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    staticcheck:
+      checks: ["all"]
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+        - opinionated
+      disabled-checks:
+        - commentedOutCode
+    gocyclo:
+      min-complexity: 15
+    dupl:
+      threshold: 100
+    gocognit:
+      min-complexity: 20
+    funlen:
+      lines: 100
+      statements: 60
+    lll:
+      line-length: 120
+    godox:
+      keywords:
+        - TODO
+        - FIXME
+        - BUG
+    revive:
+      confidence: 0.8
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+
+  exclusions:
+    paths:
+      - vendor
+      - .git
+      - .idea
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - gosec
+          - funlen
+      - path: cmd/
+        linters:
+          - gochecknoinits
+      - text: "weak cryptographic primitive"
+        linters:
+          - gosec
+
+formatters:
+  default: none
+  enable:
+    - gofmt
+    - goimports
+
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes: github.com/bear-san/kubernetes-oidc-delegator
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10
+  new: false
+
+severity:
+  default: error
+
+output:
+  formats:
+    text:
+      path: stdout
+      color: true
