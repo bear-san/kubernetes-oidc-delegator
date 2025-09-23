@@ -3,8 +3,8 @@ package handlers
 
 import (
 	"context"
-	"crypto"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -118,12 +118,13 @@ func (h *Handler) createJWKS(rsaPubKey *rsa.PublicKey) (jwk.Set, error) {
 		return nil, fmt.Errorf("failed to configure JWK: %w", configErr)
 	}
 
-	thumbprint, err := key.Thumbprint(crypto.SHA256)
+	// Generate kid using Kubernetes-compatible method:
+	// Serialize public key in DER format, take SHA256 hash, then urlsafe base64-encode
+	kid, err := h.generateKubernetesCompatibleKID(rsaPubKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate thumbprint: %w", err)
+		return nil, fmt.Errorf("failed to generate kid: %w", err)
 	}
 
-	kid := base64.RawURLEncoding.EncodeToString(thumbprint)
 	if setErr := key.Set(jwk.KeyIDKey, kid); setErr != nil {
 		return nil, fmt.Errorf("failed to set key ID: %w", setErr)
 	}
@@ -294,4 +295,24 @@ func (h *Handler) parseFromRSAPublicKey(data []byte) (*rsa.PublicKey, error) {
 	}
 
 	return rsaPubKey, nil
+}
+
+// generateKubernetesCompatibleKID generates a kid (Key ID) using Kubernetes-compatible method:
+// Serialize public key in DER format, take SHA256 hash, then urlsafe base64-encode
+func (h *Handler) generateKubernetesCompatibleKID(pubKey *rsa.PublicKey) (string, error) {
+	// Serialize the RSA public key to DER format using PKIX format
+	derBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal public key to DER: %w", err)
+	}
+
+	// Take SHA256 hash of the DER-encoded public key
+	hash := sha256.Sum256(derBytes)
+
+	// URLSafe base64-encode the hash (without padding)
+	kid := base64.RawURLEncoding.EncodeToString(hash[:])
+
+	log.Printf("Generated Kubernetes-compatible kid: %s", kid)
+
+	return kid, nil
 }
