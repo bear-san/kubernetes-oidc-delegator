@@ -1,7 +1,9 @@
+// Package root provides the root command for the kubernetes-oidc-delegator server
 package root
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,11 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/cobra"
+
 	"github.com/bear-san/kubernetes-oidc-delegator/internal/config"
 	"github.com/bear-san/kubernetes-oidc-delegator/pkg/handlers"
 	"github.com/bear-san/kubernetes-oidc-delegator/pkg/kubernetes"
-	"github.com/gin-gonic/gin"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -37,7 +40,10 @@ func init() {
 	rootCmd.Flags().StringVar(&namespacePrefix, "namespace-prefix", "", "Prefix for namespace names")
 	rootCmd.Flags().StringVar(&namespaceSuffix, "namespace-suffix", "", "Suffix for namespace names")
 	rootCmd.Flags().StringVar(&serverHost, "server-host", "", "Server host URL (required)")
-	rootCmd.MarkFlagRequired("server-host")
+
+	if err := rootCmd.MarkFlagRequired("server-host"); err != nil {
+		panic(fmt.Sprintf("failed to mark required flag: %v", err))
+	}
 }
 
 func Execute() error {
@@ -72,13 +78,15 @@ func runServer(cmd *cobra.Command, args []string) {
 	})
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
+		Addr:              ":" + port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		fmt.Printf("Starting server on port %s\n", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("Starting server on port %s", port)
+
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
@@ -87,13 +95,17 @@ func runServer(cmd *cobra.Command, args []string) {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	fmt.Println("Shutting down server...")
+	log.Println("Shutting down server...")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		log.Printf("Server forced to shutdown: %v", err)
+		cancel()
+
+		return
 	}
 
-	fmt.Println("Server exited")
+	log.Println("Server exited")
 }

@@ -1,3 +1,4 @@
+// Package kubernetes provides Kubernetes API client functionality
 package kubernetes
 
 import (

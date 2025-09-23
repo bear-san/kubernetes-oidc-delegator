@@ -1,3 +1,4 @@
+// Package config provides configuration management for the OIDC delegator
 package config
 
 import "fmt"
@@ -14,8 +15,10 @@ func (c *Config) FormatNamespace(projectID string) string {
 	if c.NamespacePrefix != "" {
 		namespace = fmt.Sprintf("%s%s", c.NamespacePrefix, namespace)
 	}
+
 	if c.NamespaceSuffix != "" {
 		namespace = fmt.Sprintf("%s%s", namespace, c.NamespaceSuffix)
 	}
+
 	return namespace
 }

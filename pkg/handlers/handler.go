@@ -1,3 +1,4 @@
+// Package handlers provides HTTP handlers for the OIDC delegator API
 package handlers
 
 import (
@@ -10,10 +11,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/bear-san/kubernetes-oidc-delegator/internal/config"
-	"github.com/bear-san/kubernetes-oidc-delegator/pkg/kubernetes"
 	"github.com/gin-gonic/gin"
 	"github.com/lestrrat-go/jwx/v2/jwk"
+
+	"github.com/bear-san/kubernetes-oidc-delegator/internal/config"
+	"github.com/bear-san/kubernetes-oidc-delegator/pkg/kubernetes"
 )
 
 type Handler struct {
@@ -59,87 +61,106 @@ func (h *Handler) GetJWKs(c *gin.Context) {
 
 	namespace := h.config.FormatNamespace(projectID)
 
+	rsaPubKey, err := h.getPublicKeyFromSecret(namespace, clusterName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get public key: %v", err)})
+		return
+	}
+
+	publicKeyset, err := h.createJWKS(rsaPubKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create JWKS: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, publicKeyset)
+}
+
+func (h *Handler) getPublicKeyFromSecret(namespace, clusterName string) (*rsa.PublicKey, error) {
 	ctx := context.Background()
+
 	secret, err := h.k8sClient.GetServiceAccountSecret(ctx, namespace, clusterName)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("failed to get secret: %v", err)})
-		return
+		return nil, fmt.Errorf("failed to get secret: %w", err)
 	}
 
 	publicKeyData, ok := secret.Data["tls.crt"]
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "public key not found in secret"})
-		return
+		return nil, fmt.Errorf("public key not found in secret")
 	}
 
 	block, _ := pem.Decode(publicKeyData)
 	if block == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode PEM block"})
-		return
+		return nil, fmt.Errorf("failed to decode PEM block")
 	}
 
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to parse certificate: %v", err)})
-		return
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
 	rsaPubKey, ok := cert.PublicKey.(*rsa.PublicKey)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "public key is not RSA"})
-		return
+		return nil, fmt.Errorf("public key is not RSA")
 	}
 
+	return rsaPubKey, nil
+}
+
+func (h *Handler) createJWKS(rsaPubKey *rsa.PublicKey) (jwk.Set, error) {
 	key, err := jwk.FromRaw(rsaPubKey)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create JWK: %v", err)})
-		return
+		return nil, fmt.Errorf("failed to create JWK: %w", err)
 	}
 
-	if err := key.Set(jwk.AlgorithmKey, "RS256"); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set algorithm"})
-		return
-	}
-	if err := key.Set(jwk.KeyUsageKey, "sig"); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set key usage"})
-		return
+	if configErr := h.configureJWK(key); configErr != nil {
+		return nil, fmt.Errorf("failed to configure JWK: %w", configErr)
 	}
 
 	thumbprint, err := key.Thumbprint(crypto.SHA256)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate thumbprint"})
-		return
-	}
-	kid := base64.RawURLEncoding.EncodeToString(thumbprint)
-	if err := key.Set(jwk.KeyIDKey, kid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set key ID"})
-		return
+		return nil, fmt.Errorf("failed to generate thumbprint: %w", err)
 	}
 
-	keyset := jwk.NewSet()
-	if err := keyset.AddKey(key); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add key to set"})
-		return
+	kid := base64.RawURLEncoding.EncodeToString(thumbprint)
+	if setErr := key.Set(jwk.KeyIDKey, kid); setErr != nil {
+		return nil, fmt.Errorf("failed to set key ID: %w", setErr)
 	}
 
 	publicKey, err := jwk.PublicRawKeyOf(key)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get public key"})
-		return
+		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
 
 	publicJWK, err := jwk.FromRaw(publicKey)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create public JWK"})
-		return
+		return nil, fmt.Errorf("failed to create public JWK: %w", err)
 	}
 
-	publicJWK.Set(jwk.AlgorithmKey, "RS256")
-	publicJWK.Set(jwk.KeyUsageKey, "sig")
-	publicJWK.Set(jwk.KeyIDKey, kid)
+	if err := h.configureJWK(publicJWK); err != nil {
+		return nil, fmt.Errorf("failed to configure public JWK: %w", err)
+	}
+
+	if err := publicJWK.Set(jwk.KeyIDKey, kid); err != nil {
+		return nil, fmt.Errorf("failed to set public key ID: %w", err)
+	}
 
 	publicKeyset := jwk.NewSet()
-	publicKeyset.AddKey(publicJWK)
+	if err := publicKeyset.AddKey(publicJWK); err != nil {
+		return nil, fmt.Errorf("failed to add public key to set: %w", err)
+	}
 
-	c.JSON(http.StatusOK, publicKeyset)
+	return publicKeyset, nil
+}
+
+func (h *Handler) configureJWK(key jwk.Key) error {
+	if err := key.Set(jwk.AlgorithmKey, "RS256"); err != nil {
+		return fmt.Errorf("failed to set algorithm: %w", err)
+	}
+
+	if err := key.Set(jwk.KeyUsageKey, "sig"); err != nil {
+		return fmt.Errorf("failed to set key usage: %w", err)
+	}
+
+	return nil
 }
