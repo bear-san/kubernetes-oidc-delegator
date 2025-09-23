@@ -1,11 +1,7 @@
-FROM alpine:latest
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN apk --no-cache add ca-certificates
-
-WORKDIR /root/
-
-COPY kubernetes-oidc-delegator .
+COPY kubernetes-oidc-delegator /
 
 EXPOSE 8080
 
-ENTRYPOINT ["./kubernetes-oidc-delegator"]
+ENTRYPOINT ["/kubernetes-oidc-delegator"]
