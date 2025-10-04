@@ -1,20 +1,16 @@
 # このプロジェクトについて
-- これは、Kubernetes の ServiceAccount に対して発行された token を外部から検証するため、JWKs を提供するための API です
+- これは、Kubernetes の API Server に提供されている ServiceAccount Token Signing Keys を JWKs 形式で公開する API サーバーです
 - 通常、Kubernetes API はローカルでのみ公開されていますが、この API を通して、AWS のような外部 IdP から、Kubernetes の ServiceAccount に対して発行された token を検証することができます
 
 # 前提
 - Kubernetes クラスタは、ServiceAccount に対して token を発行するための署名鍵を持っています
-- このプロジェクトでは、Cluster API を用いて、上記の鍵が発行されている前提で動作します
-  - つまり、指定された namespace に対して `[Cluster Name]-sa` という名前で秘密鍵・公開鍵が生成されている前提です
-- この API は、cobra を用いた CLI として実装されます
-- また、Kubernetes API へのアクセスについては、controller-runtime を使用します
-  - つまり、このアプリケーションは、Kubernetes クラスタ内で Pod として動作することを想定しています
-  - Kubernetes クラスタへのアクセスは、Pod の ServiceAccount を用いて行います
+- 起動時の引数で、署名鍵のファイルパスを指定します
+  - 鍵は PEM 形式で保存されている必要があります
+- 鍵ペアは、1つのみ指定することができます
 
 # 動作フロー
-- `SERVER_HOST/[Project ID]/[Cluster Name]/.well-known/openid-configuration` にアクセスすると、JWKs の URL が返却されます
-  - この時、`[Project ID]` は OpenStack のプロジェクト ID であり、クラスタの Namespace ですが、クラスタ管理者によって独自の Prefix/Suffix が付記されることがあるため、このフォーマットについては API サーバー起動時の引数で指定できるようにしてください
-- `SERVER_HOST/[Project ID]/[Cluster Name]/keys` にアクセスすると、JWKs が返却されます
+- `/.well-known/openid-configuration` にアクセスすると、JWKs の URL が返却されます
+- `/keys` にアクセスすると、JWKs が返却されます
 
 ## ファイルフォーマット
 ### OpenID Configuration

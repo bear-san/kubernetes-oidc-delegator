@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"context"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -11,39 +10,61 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lestrrat-go/jwx/v2/jwk"
-	corev1 "k8s.io/api/core/v1"
 
 	"github.com/bear-san/kubernetes-oidc-delegator/internal/config"
-	"github.com/bear-san/kubernetes-oidc-delegator/pkg/kubernetes"
 )
 
 type Handler struct {
-	k8sClient *kubernetes.Client
 	config    *config.Config
+	publicKey *rsa.PublicKey
 }
 
-func NewHandler(k8sClient *kubernetes.Client, cfg *config.Config) *Handler {
-	return &Handler{
-		k8sClient: k8sClient,
-		config:    cfg,
+func NewHandler(cfg *config.Config) *Handler {
+	h := &Handler{
+		config: cfg,
 	}
+
+	// Load public key on initialization
+	if err := h.loadPublicKey(); err != nil {
+		log.Fatalf("Failed to load public key: %v", err)
+	}
+
+	return h
+}
+
+func (h *Handler) loadPublicKey() error {
+	// Read the public key file
+	publicKeyData, err := os.ReadFile(h.config.PublicKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to read public key file: %w", err)
+	}
+
+	// Parse the PEM block
+	block, _ := pem.Decode(publicKeyData)
+	if block == nil {
+		return fmt.Errorf("failed to decode PEM block from public key file")
+	}
+
+	log.Printf("Decoded PEM block type: %s", block.Type)
+
+	// Parse the public key
+	rsaPubKey, err := h.parsePublicKeyFromPEM(block)
+	if err != nil {
+		return fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	h.publicKey = rsaPubKey
+	return nil
 }
 
 func (h *Handler) GetOpenIDConfiguration(c *gin.Context) {
-	projectID := c.Param("projectID")
-	clusterName := c.Param("clusterName")
-
-	if projectID == "" || clusterName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "project ID and cluster name are required"})
-		return
-	}
-
 	configuration := map[string]interface{}{
-		"issuer":                                fmt.Sprintf("%s/%s/%s", h.config.ServerHost, projectID, clusterName),
-		"jwks_uri":                              fmt.Sprintf("%s/%s/%s/keys", h.config.ServerHost, projectID, clusterName),
+		"issuer":                                h.config.Issuer,
+		"jwks_uri":                              fmt.Sprintf("%s/keys", h.config.ServerHost),
 		"response_types_supported":              []string{"id_token"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
@@ -53,59 +74,13 @@ func (h *Handler) GetOpenIDConfiguration(c *gin.Context) {
 }
 
 func (h *Handler) GetJWKs(c *gin.Context) {
-	projectID := c.Param("projectID")
-	clusterName := c.Param("clusterName")
-
-	if projectID == "" || clusterName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "project ID and cluster name are required"})
-		return
-	}
-
-	namespace := h.config.FormatNamespace(projectID)
-
-	rsaPubKey, err := h.getPublicKeyFromSecret(namespace, clusterName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get public key: %v", err)})
-		return
-	}
-
-	publicKeyset, err := h.createJWKS(rsaPubKey)
+	publicKeyset, err := h.createJWKS(h.publicKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create JWKS: %v", err)})
 		return
 	}
 
 	c.JSON(http.StatusOK, publicKeyset)
-}
-
-func (h *Handler) getPublicKeyFromSecret(namespace, clusterName string) (*rsa.PublicKey, error) {
-	ctx := context.Background()
-
-	secret, err := h.k8sClient.GetServiceAccountSecret(ctx, namespace, clusterName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get secret: %w", err)
-	}
-
-	// Try multiple common field names for the public key data
-	publicKeyData, err := h.extractPublicKeyData(secret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract public key data: %w", err)
-	}
-
-	block, _ := pem.Decode(publicKeyData)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
-	}
-
-	log.Printf("Decoded PEM block type: %s", block.Type)
-
-	// Try different parsing methods based on PEM block type
-	rsaPubKey, err := h.parsePublicKeyFromPEM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
-	}
-
-	return rsaPubKey, nil
 }
 
 func (h *Handler) createJWKS(rsaPubKey *rsa.PublicKey) (jwk.Set, error) {
@@ -165,41 +140,6 @@ func (h *Handler) configureJWK(key jwk.Key) error {
 	}
 
 	return nil
-}
-
-// extractPublicKeyData tries to extract public key data from the secret using various field names
-func (h *Handler) extractPublicKeyData(secret *corev1.Secret) ([]byte, error) {
-	// Common field names where public key data might be stored
-	fieldNames := []string{
-		"tls.crt",               // Standard TLS certificate
-		"ca.crt",                // CA certificate
-		"public.pem",            // Direct public key PEM
-		"sa.pub",                // Service account public key
-		"public-key",            // Alternative naming
-		"pub",                   // Short form
-		"signing.crt",           // Signing certificate
-		"signing-key.pub",       // Signing public key
-		"token-signing-key.pub", // Token signing public key
-		"kube-apiserver.crt",    // API server certificate
-		"public",                // Simple public key
-	}
-
-	log.Printf("Searching for public key data in secret %s", secret.Name)
-
-	for _, fieldName := range fieldNames {
-		if data, exists := secret.Data[fieldName]; exists && len(data) > 0 {
-			log.Printf("Found public key data in field %s (%d bytes)", fieldName, len(data))
-			return data, nil
-		}
-	}
-
-	// If no standard field found, list available fields for debugging
-	availableFields := make([]string, 0, len(secret.Data))
-	for key := range secret.Data {
-		availableFields = append(availableFields, key)
-	}
-
-	return nil, fmt.Errorf("no public key data found in secret, available fields: %v", availableFields)
 }
 
 // parsePublicKeyFromPEM attempts to parse a public key from PEM block using different methods

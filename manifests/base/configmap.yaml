@@ -6,5 +6,4 @@ metadata:
     app: kubernetes-oidc-delegator
 data:
   server-host: "https://your-server-host.example.com"
-  namespace-prefix: ""
-  namespace-suffix: ""
+  issuer: "https://kubernetes.default.svc.cluster.local"
