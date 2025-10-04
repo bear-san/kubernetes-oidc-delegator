@@ -24,26 +24,24 @@ spec:
         args:
         - --port=8080
         - --server-host=$(SERVER_HOST)
-        - --namespace-prefix=$(NAMESPACE_PREFIX)
-        - --namespace-suffix=$(NAMESPACE_SUFFIX)
+        - --public-key=/keys/public.pem
+        - --issuer=$(ISSUER)
         env:
         - name: SERVER_HOST
           valueFrom:
             configMapKeyRef:
               name: kubernetes-oidc-delegator-config
               key: server-host
-        - name: NAMESPACE_PREFIX
+        - name: ISSUER
           valueFrom:
             configMapKeyRef:
               name: kubernetes-oidc-delegator-config
-              key: namespace-prefix
+              key: issuer
               optional: true
-        - name: NAMESPACE_SUFFIX
-          valueFrom:
-            configMapKeyRef:
-              name: kubernetes-oidc-delegator-config
-              key: namespace-suffix
-              optional: true
+        volumeMounts:
+        - name: signing-keys
+          mountPath: /keys
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /health
@@ -71,3 +69,17 @@ spec:
           capabilities:
             drop:
             - ALL
+      volumes:
+      - name: signing-keys
+        secret:
+          # Reference the existing Secret containing the public key
+          # The secret must have a key that contains the public key in PEM format
+          # Example: If your existing secret is "cluster-signing-keys" with key "sa.pub":
+          #   secretName: cluster-signing-keys
+          #   items:
+          #   - key: sa.pub
+          #     path: public.pem
+          secretName: kubernetes-oidc-delegator-keys  # Replace with your existing secret name
+          items:
+          - key: public.pem  # Replace with the actual key name in your secret
+            path: public.pem   # This path must match the --public-key argument

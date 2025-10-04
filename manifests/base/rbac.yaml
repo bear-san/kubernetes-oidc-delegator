@@ -1,25 +1,5 @@
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kubernetes-oidc-delegator
-  labels:
-    app: kubernetes-oidc-delegator
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list"]
+# RBAC configuration for kubernetes-oidc-delegator
+# Note: In the new implementation, the application doesn't need to access Kubernetes API
+# This file is kept for future use if needed
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kubernetes-oidc-delegator
-  labels:
-    app: kubernetes-oidc-delegator
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernetes-oidc-delegator
-subjects:
-- kind: ServiceAccount
-  name: kubernetes-oidc-delegator
-  namespace: default
+# Placeholder for future RBAC requirements
