@@ -58,6 +58,7 @@ func (h *Handler) loadPublicKey() error {
 	}
 
 	h.publicKey = rsaPubKey
+
 	return nil
 }
 

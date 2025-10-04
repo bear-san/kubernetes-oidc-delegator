@@ -43,6 +43,7 @@ func init() {
 	if err := rootCmd.MarkFlagRequired("server-host"); err != nil {
 		panic(fmt.Sprintf("failed to mark required flag: %v", err))
 	}
+
 	if err := rootCmd.MarkFlagRequired("public-key"); err != nil {
 		panic(fmt.Sprintf("failed to mark required flag: %v", err))
 	}
