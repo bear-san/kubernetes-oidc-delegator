@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/lestrrat-go/jwx/v2 v2.1.6
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 )
 
 require (
